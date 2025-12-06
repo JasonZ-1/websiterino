@@ -2,13 +2,7 @@
 // Keep background logic DOM-free. Use popup or content scripts to access `document`.
 
 chrome.runtime.onInstalled.addListener(() => {
-	console.log('Websiterino service worker installed');
-	// Clean up legacy per-site storage key if present
-	try {
-		chrome.storage.sync.remove('sites', () => {
-			// ignore errors
-		});
-	} catch (e) {}
+	// service worker installed
 });
 
 // Example: listen for messages (popup can send messages here)
@@ -21,8 +15,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 	}
 
 	if (msg.type === 'feature-toggled') {
-			// Remove legacy per-site storage to keep storage consistent with global-only mode
-			try { chrome.storage.sync.remove('sites', () => {}); } catch (e) {}
 		// Popup notifies when user toggles the feature. Inject or disable UI in the active tab.
 		(async () => {
 			try {
