@@ -54,19 +54,18 @@
   }
 
   function showButtonAtRect(rect) {
+    const btnWidth = 34; // matches CSS
+    // Use client rect + scroll offsets to compute document coordinates for absolute positioning
     const scrollX = window.scrollX || window.pageXOffset;
     const scrollY = window.scrollY || window.pageYOffset;
-    const btnWidth = 34; // matches CSS
-    // Center the button horizontally over the selection rect
     let left = rect.left + scrollX + (rect.width - btnWidth) / 2;
-    // Place the button above the selection by default
     let top = rect.top + scrollY - 42;
-    const vw = document.documentElement.clientWidth;
-    // keep button within viewport horizontally
-    if (left + btnWidth > scrollX + vw - 8) left = scrollX + vw - btnWidth - 8;
-    if (left < scrollX + 8) left = scrollX + 8;
-    // if placing above would go off-screen, place below the selection
-    if (top < scrollY + 8) top = rect.bottom + scrollY + 8;
+    const docW = Math.max(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+    // keep button within document bounds horizontally
+    if (left + btnWidth > docW - 8) left = docW - btnWidth - 8;
+    if (left < 8) left = 8;
+    // if placing above would go off-screen (document top), place below the selection
+    if (top < 8) top = rect.bottom + scrollY + 8;
 
     btn.style.left = Math.round(left) + 'px';
     btn.style.top = Math.round(top) + 'px';
@@ -74,12 +73,13 @@
   }
 
   function showPanelNear(rect, text) {
+    // Use client rect + scroll offsets to position absolutely within the document
     const scrollX = window.scrollX || window.pageXOffset;
     const scrollY = window.scrollY || window.pageYOffset;
     let left = rect.left + scrollX;
     let top = rect.bottom + scrollY + 10;
-    const vw = document.documentElement.clientWidth;
-    if (left + 440 > scrollX + vw) left = Math.max(scrollX + 8, scrollX + vw - 440);
+    const docW = Math.max(document.documentElement.scrollWidth, document.documentElement.clientWidth);
+    if (left + 440 > docW) left = Math.max(8, docW - 440);
     panel.style.left = left + 'px';
     panel.style.top = top + 'px';
     contentEl.textContent = text;
@@ -170,23 +170,52 @@
       // Fallback: elementFromPoint and use its bounding box
       const el = document.elementFromPoint(x, y);
       if (el) {
-        const r = el.getBoundingClientRect();
-        // If element is large, try to narrow it to a small box near the point
+        // return a small rect centered at the point (viewport coordinates)
         return { left: x - 8, right: x + 8, top: y - 8, bottom: y + 8, width: 16, height: 16 };
       }
     } catch (e) {}
     return null;
   }
 
+  // Helper: try to extract a useful text string from a Range
+  function extractTextFromRange(range) {
+    try {
+      let text = '';
+      try { text = range.toString().trim(); } catch (e) { text = ''; }
+      if (text) return text;
+      // Try cloning contents
+      try {
+        const frag = range.cloneContents();
+        const s = frag.textContent && frag.textContent.trim();
+        if (s) return s;
+      } catch (e) {}
+      // Fallback: ancestor container text near range
+      try {
+        const node = range.startContainer;
+        if (node) {
+          let anc = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+          if (anc && anc.textContent) {
+            const content = anc.textContent.trim();
+            if (content) return content.slice(0, 500);
+          }
+        }
+      } catch (e) {}
+    } catch (e) {}
+    return '';
+  }
+
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
-    if (lastSelection) {
-      const sel = window.getSelection();
-      if (!sel.rangeCount) return;
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
-      showPanelNear(rect, lastSelection);
-    }
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    // Prefer explicit selection string, then try extracting from the range
+    let text = '';
+    try { text = (sel.toString() || '').trim(); } catch (e) { text = ''; }
+    if (!text) text = extractTextFromRange(range) || lastSelection || '';
+    showPanelNear(rect, text);
   });
 
   closeBtn.addEventListener('click', () => {
@@ -208,6 +237,7 @@
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('keyup', onKeyUp);
+      try { window.removeEventListener('scroll', onPageScroll, { passive: true }); } catch (e) {}
       if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
@@ -215,75 +245,13 @@
     window.__websiterinoInjected = false;
   }
 
-  // Track panel position while visible so it follows the selection/caret as the page moves.
-  let tracking = false;
-  let trackRaf = null;
-  let lastTrackedRect = null;
-
-  function updatePanelPositionFromSelection() {
+  // Instead of tracking during scroll, hide the UI when the page scrolls so listeners remain active.
+  function onPageScroll() {
     try {
-      const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return false;
-      const range = sel.getRangeAt(0);
-      let rect = range.getBoundingClientRect();
-      if ((!rect || (!rect.width && !rect.height)) && range.getClientRects().length) rect = range.getClientRects()[0];
-      if (!rect) return false;
-      // compute same panel position logic as showPanelNear
-      const scrollX = window.scrollX || window.pageXOffset;
-      const scrollY = window.scrollY || window.pageYOffset;
-      let left = rect.left + scrollX;
-      let top = rect.bottom + scrollY + 10;
-      const vw = document.documentElement.clientWidth;
-      if (left + 440 > scrollX + vw) left = Math.max(scrollX + 8, scrollX + vw - 440);
-      // only update if position changed
-      const newPos = { left: Math.round(left), top: Math.round(top) };
-      if (!lastTrackedRect || lastTrackedRect.left !== newPos.left || lastTrackedRect.top !== newPos.top) {
-        panel.style.left = newPos.left + 'px';
-        panel.style.top = newPos.top + 'px';
-        lastTrackedRect = newPos;
-      }
-      return true;
-    } catch (e) { return false; }
-  }
-
-  function trackLoop() {
-    if (!tracking) return;
-    updatePanelPositionFromSelection();
-    trackRaf = requestAnimationFrame(trackLoop);
-  }
-
-  function startTracking() {
-    if (tracking) return;
-    tracking = true;
-    lastTrackedRect = null;
-    // Add scroll/resize listeners so the panel updates immediately during scrolls
-    try {
-      window.addEventListener('scroll', onScroll, { passive: true });
+      // Hide the UI on scroll — keep listeners so new selections still work after scrolling.
+      clearUI();
     } catch (e) {}
-    try {
-      window.addEventListener('resize', onResize);
-    } catch (e) {}
-    try {
-      document.addEventListener('wheel', onWheel, { passive: true });
-    } catch (e) {}
-    trackLoop();
   }
-
-  function stopTracking() {
-    tracking = false;
-    if (trackRaf) {
-      cancelAnimationFrame(trackRaf);
-      trackRaf = null;
-    }
-    lastTrackedRect = null;
-    try { window.removeEventListener('scroll', onScroll, { passive: true }); } catch (e) {}
-    try { window.removeEventListener('resize', onResize); } catch (e) {}
-    try { document.removeEventListener('wheel', onWheel, { passive: true }); } catch (e) {}
-  }
-
-  function onScroll() { try { updatePanelPositionFromSelection(); } catch (e) {} }
-  function onResize() { try { updatePanelPositionFromSelection(); } catch (e) {} }
-  function onWheel() { try { updatePanelPositionFromSelection(); } catch (e) {} }
 
   // Listen for disable message from background to cleanup
   function onMessage(msg) {
@@ -291,14 +259,15 @@
   }
   chrome.runtime.onMessage.addListener(onMessage);
 
+  // Hide the button when the page scrolls
+  try { window.addEventListener('scroll', onPageScroll, { passive: true }); } catch (e) {}
+
   // Immediately check for an existing selection when the script is injected.
   // This ensures that toggling the extension on will show the button over any highlighted text
   // that already exists on the page.
   try {
     setTimeout(handleSelection, 100);
-    // Start tracking by default so the panel/button follow movement even if panel is closed.
-    // Tracking runs until the content script is cleaned up or extension is disabled.
-    startTracking();
+    // No continuous tracking; UI will be hidden on scroll via `onPageScroll`.
   } catch (e) {}
 
 })();
