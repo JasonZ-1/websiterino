@@ -30,7 +30,7 @@
   const btn = document.createElement('button');
   btn.id = BUTTON_ID;
   btn.title = 'Open';
-  btn.innerText = '⋯';
+  btn.innerText = '?';
   (document.body || document.documentElement).appendChild(btn);
 
   const panel = document.createElement('div');
@@ -44,6 +44,7 @@
 
   let lastSelection = '';
   let mouseUpTimer = null;
+  let lastMouse = { x: 0, y: 0 };
 
   function clearUI() {
     btn.classList.remove('visible');
@@ -55,15 +56,20 @@
   function showButtonAtRect(rect) {
     const scrollX = window.scrollX || window.pageXOffset;
     const scrollY = window.scrollY || window.pageYOffset;
-    let left = rect.right + scrollX - 34;
+    const btnWidth = 34; // matches CSS
+    // Center the button horizontally over the selection rect
+    let left = rect.left + scrollX + (rect.width - btnWidth) / 2;
+    // Place the button above the selection by default
     let top = rect.top + scrollY - 42;
     const vw = document.documentElement.clientWidth;
-    if (left + 40 > scrollX + vw) left = scrollX + vw - 46;
+    // keep button within viewport horizontally
+    if (left + btnWidth > scrollX + vw - 8) left = scrollX + vw - btnWidth - 8;
     if (left < scrollX + 8) left = scrollX + 8;
+    // if placing above would go off-screen, place below the selection
     if (top < scrollY + 8) top = rect.bottom + scrollY + 8;
 
-    btn.style.left = left + 'px';
-    btn.style.top = top + 'px';
+    btn.style.left = Math.round(left) + 'px';
+    btn.style.top = Math.round(top) + 'px';
     btn.classList.add('visible');
   }
 
@@ -78,6 +84,7 @@
     panel.style.top = top + 'px';
     contentEl.textContent = text;
     panel.style.display = 'block';
+    startTracking();
   }
 
   function handleSelection() {
@@ -107,6 +114,70 @@
 
   document.addEventListener('selectionchange', onSelectionChange);
 
+  // Track last mouse coordinates to fall back to caret-from-point when selection is not reported
+  function onMouseUp(e) {
+    lastMouse.x = e.clientX;
+    lastMouse.y = e.clientY;
+    // small delay to allow editor to update selection state
+    setTimeout(() => {
+      handleSelection();
+      // if no visual selection found, try caret-based rect
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) {
+        const rect = rectFromPoint(lastMouse.x, lastMouse.y);
+        if (rect) {
+          // show button using rect and set lastSelection to nearby text if possible
+          try {
+            const text = sel ? sel.toString().trim() : '';
+            lastSelection = text || '';
+          } catch (e) { lastSelection = ''; }
+          showButtonAtRect(rect);
+        }
+      }
+    }, 50);
+  }
+
+  function onKeyUp(e) {
+    // handle keyboard selections (shift+arrows)
+    setTimeout(handleSelection, 50);
+  }
+
+  document.addEventListener('mouseup', onMouseUp);
+  document.addEventListener('keyup', onKeyUp);
+
+  // Try to compute a reasonable rect from a point when selection APIs fail (works as a fallback in complex editors)
+  function rectFromPoint(x, y) {
+    try {
+      // Try caretRangeFromPoint (WebKit/Blink)
+      if (document.caretRangeFromPoint) {
+        const range = document.caretRangeFromPoint(x, y);
+        if (range) {
+          const rects = range.getClientRects();
+          if (rects && rects.length) return rects[0];
+        }
+      }
+      // Try caretPositionFromPoint (Firefox)
+      if (document.caretPositionFromPoint) {
+        const pos = document.caretPositionFromPoint(x, y);
+        if (pos && pos.offsetNode) {
+          const range = document.createRange();
+          range.setStart(pos.offsetNode, pos.offset);
+          range.setEnd(pos.offsetNode, pos.offset);
+          const rects = range.getClientRects();
+          if (rects && rects.length) return rects[0];
+        }
+      }
+      // Fallback: elementFromPoint and use its bounding box
+      const el = document.elementFromPoint(x, y);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        // If element is large, try to narrow it to a small box near the point
+        return { left: x - 8, right: x + 8, top: y - 8, bottom: y + 8, width: 16, height: 16 };
+      }
+    } catch (e) {}
+    return null;
+  }
+
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -135,12 +206,84 @@
     try {
       document.removeEventListener('selectionchange', onSelectionChange);
       document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('keyup', onKeyUp);
       if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
     } catch (e) {}
     window.__websiterinoInjected = false;
   }
+
+  // Track panel position while visible so it follows the selection/caret as the page moves.
+  let tracking = false;
+  let trackRaf = null;
+  let lastTrackedRect = null;
+
+  function updatePanelPositionFromSelection() {
+    try {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return false;
+      const range = sel.getRangeAt(0);
+      let rect = range.getBoundingClientRect();
+      if ((!rect || (!rect.width && !rect.height)) && range.getClientRects().length) rect = range.getClientRects()[0];
+      if (!rect) return false;
+      // compute same panel position logic as showPanelNear
+      const scrollX = window.scrollX || window.pageXOffset;
+      const scrollY = window.scrollY || window.pageYOffset;
+      let left = rect.left + scrollX;
+      let top = rect.bottom + scrollY + 10;
+      const vw = document.documentElement.clientWidth;
+      if (left + 440 > scrollX + vw) left = Math.max(scrollX + 8, scrollX + vw - 440);
+      // only update if position changed
+      const newPos = { left: Math.round(left), top: Math.round(top) };
+      if (!lastTrackedRect || lastTrackedRect.left !== newPos.left || lastTrackedRect.top !== newPos.top) {
+        panel.style.left = newPos.left + 'px';
+        panel.style.top = newPos.top + 'px';
+        lastTrackedRect = newPos;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function trackLoop() {
+    if (!tracking) return;
+    updatePanelPositionFromSelection();
+    trackRaf = requestAnimationFrame(trackLoop);
+  }
+
+  function startTracking() {
+    if (tracking) return;
+    tracking = true;
+    lastTrackedRect = null;
+    // Add scroll/resize listeners so the panel updates immediately during scrolls
+    try {
+      window.addEventListener('scroll', onScroll, { passive: true });
+    } catch (e) {}
+    try {
+      window.addEventListener('resize', onResize);
+    } catch (e) {}
+    try {
+      document.addEventListener('wheel', onWheel, { passive: true });
+    } catch (e) {}
+    trackLoop();
+  }
+
+  function stopTracking() {
+    tracking = false;
+    if (trackRaf) {
+      cancelAnimationFrame(trackRaf);
+      trackRaf = null;
+    }
+    lastTrackedRect = null;
+    try { window.removeEventListener('scroll', onScroll, { passive: true }); } catch (e) {}
+    try { window.removeEventListener('resize', onResize); } catch (e) {}
+    try { document.removeEventListener('wheel', onWheel, { passive: true }); } catch (e) {}
+  }
+
+  function onScroll() { try { updatePanelPositionFromSelection(); } catch (e) {} }
+  function onResize() { try { updatePanelPositionFromSelection(); } catch (e) {} }
+  function onWheel() { try { updatePanelPositionFromSelection(); } catch (e) {} }
 
   // Listen for disable message from background to cleanup
   function onMessage(msg) {
@@ -153,6 +296,9 @@
   // that already exists on the page.
   try {
     setTimeout(handleSelection, 100);
+    // Start tracking by default so the panel/button follow movement even if panel is closed.
+    // Tracking runs until the content script is cleaned up or extension is disabled.
+    startTracking();
   } catch (e) {}
 
 })();
