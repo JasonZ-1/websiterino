@@ -1,0 +1,117 @@
+/*
+  popup.css
+  - Styles for the extension popup (Websiterino)
+  - Purpose: keep popup markup clean and provide documented theme variables
+  - Usage: include this file from `popup.html` with a <link rel="stylesheet" href="popup.css">
+
+  The file is organized into sections:
+  1) Theme variables
+  2) Layout & base styles
+  3) Card / header
+  4) Toggle switch
+  5) Utility & small text
+*/
+
+/* =========================
+   1) Theme variables
+   ========================= */
+:root{
+  /* Primary colors (feel free to tweak) */
+  --bg: #0f1724;            /* page background */
+  --card: #0b1220;          /* card background fallback */
+  --accent: #3b82f6;        /* primary accent */
+  --muted: #94a3b8;         /* muted text color */
+  --radius: 14px;          /* global corner radius (slightly rounder) */
+}
+
+
+/* =========================
+   2) Layout & base styles
+   ========================= */
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: Segoe UI, Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial;
+}
+body {
+  width: 320px;
+  background: linear-gradient(180deg, var(--bg), #071021);
+  color: #e6eef8;
+}
+
+/* Card container that holds popup content */
+.card {
+  box-sizing: border-box;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  margin: 12px;
+  /* soft shadow for depth */
+  box-shadow: 0 8px 24px rgba(2,8,23,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+
+/* =========================
+   3) Card / header
+   ========================= */
+.header { display: flex; align-items: center; gap: 12px; }
+.logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px; /* match card radius vibe */
+  background: linear-gradient(135deg, var(--accent), #60a5fa);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; color: #06212a;
+  box-shadow: 0 8px 22px rgba(11,20,32,0.55);
+  transform: translateZ(0);
+}
+h1 { font-size: 16px; margin: 0; }
+p.desc { margin: 6px 0 0 0; color: var(--muted); font-size: 13px; }
+
+.row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+
+
+/* =========================
+   4) Toggle switch
+   ========================= */
+/* The switch is implemented as a label wrapper with a visually hidden checkbox */
+.switch{
+  --w: 56px; --h: 30px; --pad: 4px;
+  width: var(--w);
+  height: var(--h);
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;  /* pill */
+  position: relative;
+  padding: var(--pad);
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: background .22s cubic-bezier(.2,.9,.25,1), transform .18s;
+}
+.switch input { display: none; }
+.knob{
+  width: calc(var(--h) - var(--pad)*2);
+  height: calc(var(--h) - var(--pad)*2);
+  background: white;
+  border-radius: 999px;   /* circular */
+  position: absolute; top: var(--pad); left: var(--pad);
+  transition: transform .24s cubic-bezier(.2,.9,.25,1), background .18s, box-shadow .18s;
+  box-shadow: 0 4px 10px rgba(2,8,23,0.35);
+}
+.switch.on { background: linear-gradient(90deg, var(--accent), #60a5fa); }
+.switch.on .knob { transform: translateX(calc(var(--w) - var(--h))); background: white; box-shadow: 0 6px 16px rgba(3,58,120,0.35); }
+
+/* subtle hover/focus affordances */
+.switch:hover { transform: translateY(-1px); }
+.switch:active .knob { transform: scale(0.98); }
+
+/* last-updated removed — timestamp UI disabled */
+
+
+/* =========================
+   5) Utility & small text
+   ========================= */
+.statusText { font-size: 13px; color: var(--muted); }
+.footer { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.small { font-size: 12px; color: #bcd3ff; }
+
+/* End of popup.css */

@@ -1,11 +1,35 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
   <head>
-    <title>My Extension</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Websiterino</title>
+    <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <h1>Hello!</h1>
-    <button id="btn">Click me</button>
-    <script src="background.js"></script>
+    <div class="card">
+      <div class="header">
+        <div class="logo">W</div>
+        <div style="flex:1">
+          <h1>Websiterino</h1>
+          <p class="desc">Quickly turn the extension feature on or off for the active site.</p>
+        </div>
+      </div>
+
+      <div class="row" style="align-items:center">
+        <div>
+          <div class="small">Feature</div>
+          <div class="statusText" id="stateText">Enabled</div>
+        </div>
+        <label class="switch" id="switchLabel" aria-label="Toggle feature">
+          <input type="checkbox" id="toggle" />
+          <div class="knob" aria-hidden="true"></div>
+        </label>
+      </div>
+
+      <div class="footer">When enabled, the extension can run its content script on pages. Toggle to try it out.</div>
+    </div>
+
+    <script src="popup.js"></script>
   </body>
 </html>

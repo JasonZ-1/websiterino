@@ -4,12 +4,12 @@
   "description": "Extension that includes a popup and requests host and storage permissions.",
   "version": "1.0",
   "icons": {
-    "16": "images/icon-16.jpg"
+    "16": "images/icon-16.png"
   },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/icon-16.jpg"
+      "16": "images/icon-16.png"
     }
   },
   "background": {
