@@ -1,5 +1,5 @@
 // Content script: show a small action button over selected text and open a box when pressed.
-;(function(){
+(function () {
   if (window.__websiterinoInjected) return;
   window.__websiterinoInjected = true;
 
@@ -24,26 +24,26 @@
   const styleEl = document.createElement('style');
   styleEl.id = STYLE_ID;
   styleEl.textContent = css;
-  document.head.appendChild(styleEl);
+  (document.head || document.documentElement).appendChild(styleEl);
 
-  // Create floating button
+  // Create floating button and panel and attach to body when possible
   const btn = document.createElement('button');
   btn.id = BUTTON_ID;
   btn.title = 'Open';
   btn.innerText = '⋯';
-  document.documentElement.appendChild(btn);
+  (document.body || document.documentElement).appendChild(btn);
 
-  // Create panel
   const panel = document.createElement('div');
   panel.id = PANEL_ID;
   panel.style.display = 'none';
   panel.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="content"></div>`;
-  document.documentElement.appendChild(panel);
+  (document.body || document.documentElement).appendChild(panel);
 
   const contentEl = panel.querySelector('.content');
   const closeBtn = panel.querySelector('.close');
 
   let lastSelection = '';
+  let mouseUpTimer = null;
 
   function clearUI() {
     btn.classList.remove('visible');
@@ -53,17 +53,14 @@
   }
 
   function showButtonAtRect(rect) {
-    // Position button slightly above/right of selection
     const scrollX = window.scrollX || window.pageXOffset;
     const scrollY = window.scrollY || window.pageYOffset;
-    let left = rect.right + scrollX - 34; // align to right
-    let top = rect.top + scrollY - 42; // above selection
-    // ensure on screen
+    let left = rect.right + scrollX - 34;
+    let top = rect.top + scrollY - 42;
     const vw = document.documentElement.clientWidth;
-    const vh = document.documentElement.clientHeight;
     if (left + 40 > scrollX + vw) left = scrollX + vw - 46;
     if (left < scrollX + 8) left = scrollX + 8;
-    if (top < scrollY + 8) top = rect.bottom + scrollY + 8; // place below if too high
+    if (top < scrollY + 8) top = rect.bottom + scrollY + 8;
 
     btn.style.left = left + 'px';
     btn.style.top = top + 'px';
@@ -75,7 +72,6 @@
     const scrollY = window.scrollY || window.pageYOffset;
     let left = rect.left + scrollX;
     let top = rect.bottom + scrollY + 10;
-    // clamp
     const vw = document.documentElement.clientWidth;
     if (left + 440 > scrollX + vw) left = Math.max(scrollX + 8, scrollX + vw - 440);
     panel.style.left = left + 'px';
@@ -90,14 +86,12 @@
     const text = sel.toString().trim();
     if (!text) { clearUI(); lastSelection = ''; return; }
     lastSelection = text;
-    // get bounding rect
     try {
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       if (rect && (rect.width || rect.height)) {
         showButtonAtRect(rect);
       } else {
-        // fallback: use first client rect
         const clientRects = range.getClientRects();
         if (clientRects.length) showButtonAtRect(clientRects[0]);
         else clearUI();
@@ -105,18 +99,18 @@
     } catch (e) { clearUI(); }
   }
 
-  let mouseUpTimer = null;
-  document.addEventListener('selectionchange', () => {
-    // small debounce
+  // Debounced selection change handler
+  function onSelectionChange() {
     if (mouseUpTimer) clearTimeout(mouseUpTimer);
     mouseUpTimer = setTimeout(handleSelection, 150);
-  });
+  }
+
+  document.addEventListener('selectionchange', onSelectionChange);
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
     if (lastSelection) {
-      // show panel
       const sel = window.getSelection();
       if (!sel.rangeCount) return;
       const rect = sel.getRangeAt(0).getBoundingClientRect();
@@ -128,22 +122,37 @@
     panel.style.display = 'none';
   });
 
-  // click outside closes panel and button
-  document.addEventListener('mousedown', (e) => {
+  // click outside closes panel
+  function onMouseDown(e) {
     if (!panel.contains(e.target) && e.target !== btn) {
       panel.style.display = 'none';
     }
-  });
+  }
+  document.addEventListener('mousedown', onMouseDown);
 
-  // messages from background
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === 'disable-ui') {
-      // cleanup
-      try {
-        btn.remove(); panel.remove(); styleEl.remove();
-      } catch (e) {}
-      window.__websiterinoInjected = false;
-    }
-  });
+  // Clean up function to remove UI and listeners
+  function cleanup() {
+    try {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('mousedown', onMouseDown);
+      if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+      if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+      if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+    } catch (e) {}
+    window.__websiterinoInjected = false;
+  }
+
+  // Listen for disable message from background to cleanup
+  function onMessage(msg) {
+    if (msg && msg.type === 'disable-ui') cleanup();
+  }
+  chrome.runtime.onMessage.addListener(onMessage);
+
+  // Immediately check for an existing selection when the script is injected.
+  // This ensures that toggling the extension on will show the button over any highlighted text
+  // that already exists on the page.
+  try {
+    setTimeout(handleSelection, 100);
+  } catch (e) {}
 
 })();
