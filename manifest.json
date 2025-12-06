@@ -23,6 +23,16 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "contentStyles.css",
+        "fonts/*",
+        "fonts/stylesheet.css"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "optional_permissions": [
     "tabs"
   ],

@@ -3,22 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Websiterino</title>
+    <title>SummaWeb</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <div class="card">
       <div class="header">
-        <img class="logo">src="icon-512.png"</img>
+        <img class="logo" src="images/icon-512.png"></img>
         <div style="flex:1">
-          <h1>Websiterino</h1>  
-          <p class="desc">Quickly turn the extension feature on or off (global).</p>
+          <h1>SummaWeb</h1>  
+          <p class="desc">Quickly get text summaries in fonts designed for dyslexia</p>
         </div>
       </div>
 
       <div class="row" style="align-items:center">
         <div>
-          <div class="small">Feature</div>
+          <div class="small">Summarizer</div>
           <div class="statusText" id="stateText">Enabled</div>
         </div>
         <label class="switch" id="switchLabel" aria-label="Toggle feature">
@@ -27,7 +27,7 @@
         </label>
       </div>
 
-      <div class="footer">When enabled, the extension runs its content script on all pages. Toggle to try it out.</div>
+      <div class="footer">When enabled, a button will appear above any highlighted text.</div>
     </div>
 
     <script src="popup.js"></script>

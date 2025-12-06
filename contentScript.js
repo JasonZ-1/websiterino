@@ -6,9 +6,22 @@
   const STYLE_ID = 'websiterino-style';
   const BUTTON_ID = 'websiterino-select-btn';
   const PANEL_ID = 'websiterino-panel';
+  const PANEL_UL_ID = 'websiterino-panel-ul';
 
-  // basic styles for the button and panel
-  const css = `
+  // build @font-face dynamically using the extension resource URL so fonts work when loaded by the page
+  let fontWoff2 = 'fonts/OpenDyslexic-Regular.woff2';
+  let fontWoff = 'fonts/OpenDyslexic-Regular.woff';
+  try {
+    if (chrome && chrome.runtime && chrome.runtime.getURL) {
+      fontWoff2 = chrome.runtime.getURL('fonts/OpenDyslexic-Regular.woff2');
+      fontWoff = chrome.runtime.getURL('fonts/OpenDyslexic-Regular.woff');
+    }
+  } catch (e) {}
+
+  const fontFace = `@font-face { font-family: 'OpenDyslexic'; src: url('${fontWoff2}') format('woff2'), url('${fontWoff}') format('woff'); font-weight: normal; font-style: normal; font-display: swap; }\n`;
+
+  // basic styles for the button and panel (panel will prefer OpenDyslexic)
+  const css = fontFace + `
     #${BUTTON_ID} {
       position: absolute; z-index:2147483647; display:inline-flex; align-items:center; justify-content:center;
       width:34px;height:34px;border-radius:8px;background:linear-gradient(180deg,#fff,#eef);
@@ -16,9 +29,10 @@
       transition:transform .12s ease, opacity .12s; opacity:0; pointer-events:none;
     }
     #${BUTTON_ID}.visible{ opacity:1; pointer-events:auto; transform:translateY(-4px); }
-    #${PANEL_ID} { position: absolute; z-index:2147483648; min-width:220px; max-width:420px; background:linear-gradient(180deg,#ffffff,#f6fafc); color:#022; border-radius:10px; box-shadow:0 12px 36px rgba(2,8,23,0.5); padding:12px; font-family:Segoe UI, Roboto, sans-serif; }
-    #${PANEL_ID} .close { position:absolute; right:8px; top:6px; border:0; background:transparent; font-size:14px; cursor:pointer }
-    #${PANEL_ID} .content { white-space:pre-wrap; word-break:break-word; color:#033; }
+    #${PANEL_ID} { position: absolute; z-index:2147483648; min-width:220px; max-width:420px; background:linear-gradient(180deg,#ffffff,#f6fafc); color:#022; border-radius:10px; box-shadow:0 12px 36px rgba(2,8,23,0.5); padding:12px; font-family:'OpenDyslexic', Segoe UI, Roboto, sans-serif; }
+    #${PANEL_ID} .close { position:absolute; right:8px; top:6px; border:0; background:transparent; font-size:14px; cursor:pointer; color:red; }
+    #${PANEL_ID} .content { white-space:pre-wrap; word-break:break-word; color:#033; padding-right:9px;}
+    #${PANEL_UL_ID} ul { overflow: auto; }
   `;
 
   const styleEl = document.createElement('style');
@@ -38,6 +52,9 @@
   panel.style.display = 'none';
   panel.innerHTML = `<button class="close" aria-label="Close">✕</button><div class="content"></div>`;
   (document.body || document.documentElement).appendChild(panel);
+  
+  const innerUL = document.createElement('ul');
+  panel.appendChild(innerUL);
 
   const contentEl = panel.querySelector('.content');
   const closeBtn = panel.querySelector('.close');
@@ -45,12 +62,18 @@
   let lastSelection = '';
   let mouseUpTimer = null;
   let lastMouse = { x: 0, y: 0 };
+  
 
   function clearUI() {
     btn.classList.remove('visible');
     btn.style.left = '-9999px';
     btn.style.top = '-9999px';
     panel.style.display = 'none';
+
+    // Get rid of previous results
+    while (innerUL.firstChild) {
+      innerUL.removeChild(innerUL.firstChild);
+    }
   }
 
   function showButtonAtRect(rect) {
@@ -82,14 +105,49 @@
     if (left + 440 > docW) left = Math.max(8, docW - 440);
     panel.style.left = left + 'px';
     panel.style.top = top + 'px';
-    contentEl.textContent = text;
+    contentEl.textContent = 'Loading summary...';
+
+    // Get rid of previous results
+    while (innerUL.firstChild) {
+      innerUL.removeChild(innerUL.firstChild);
+    }
+
+    // Request the summarise endpoint and parse JSON.
+    fetch(`http://127.0.0.1:5000/summarise?text=${encodeURIComponent(text)}`)
+      .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok: ' + response.status);
+        return response.json();
+      })
+      .then(data => {
+        contentEl.textContent = '';
+        console.log('summarise response', data);
+        if (data) {
+          // Render each part as its own li for readability (good for dyslexia)
+          data = JSON.parse(data);
+          
+          Object.values(data).forEach(p => {
+            const pEl = document.createElement('li');
+            pEl.textContent = p;
+            pEl.style.marginBottom = '6px';
+            pEl.style.fontSize = '18px';
+            pEl.style.borderBottom = '1px solid #000000ff';
+            pEl.style.paddingBottom = '3px';
+            pEl.style.fontFamily = 'OpenDyslexic';
+            innerUL.appendChild(pEl);
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Fetch error:', error);
+        contentEl.textContent = 'Error fetching summary.';
+      });
+
     panel.style.display = 'block';
-    startTracking();
   }
 
   function handleSelection() {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) { clearUI(); lastSelection = ''; return; }
+    if (!sel || sel.isCollapsed && !panel.style.display === 'block') { clearUI(); lastSelection = ''; return; }
     const text = sel.toString().trim();
     if (!text) { clearUI(); lastSelection = ''; return; }
     lastSelection = text;
@@ -239,22 +297,12 @@
     panel.style.display = 'none';
   });
 
-  // click outside closes panel
-  function onMouseDown(e) {
-    if (!panel.contains(e.target) && e.target !== btn) {
-      panel.style.display = 'none';
-    }
-  }
-  document.addEventListener('mousedown', onMouseDown);
-
   // Clean up function to remove UI and listeners
   function cleanup() {
     try {
       document.removeEventListener('selectionchange', onSelectionChange);
-      document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('keyup', onKeyUp);
-      try { window.removeEventListener('scroll', onPageScroll, { passive: true }); } catch (e) {}
       if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
@@ -262,22 +310,11 @@
     window.__websiterinoInjected = false;
   }
 
-  // Instead of tracking during scroll, hide the UI when the page scrolls so listeners remain active.
-  function onPageScroll() {
-    try {
-      // Hide the UI on scroll — keep listeners so new selections still work after scrolling.
-      clearUI();
-    } catch (e) {}
-  }
-
   // Listen for disable message from background to cleanup
   function onMessage(msg) {
     if (msg && msg.type === 'disable-ui') cleanup();
   }
   chrome.runtime.onMessage.addListener(onMessage);
-
-  // Hide the button when the page scrolls
-  try { window.addEventListener('scroll', onPageScroll, { passive: true }); } catch (e) {}
 
   // Immediately check for an existing selection when the script is injected.
   // This ensures that toggling the extension on will show the button over any highlighted text
