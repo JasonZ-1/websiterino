@@ -122,18 +122,8 @@
     setTimeout(() => {
       handleSelection();
       // if no visual selection found, try caret-based rect
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed) {
-        const rect = rectFromPoint(lastMouse.x, lastMouse.y);
-        if (rect) {
-          // show button using rect and set lastSelection to nearby text if possible
-          try {
-            const text = sel ? sel.toString().trim() : '';
-            lastSelection = text || '';
-          } catch (e) { lastSelection = ''; }
-          showButtonAtRect(rect);
-        }
-      }
+      // Do NOT show the button when there's no actual highlighted text.
+      // handleSelection() already shows the button when a non-empty selection exists.
     }, 50);
   }
 
@@ -148,15 +138,8 @@
   // Try to compute a reasonable rect from a point when selection APIs fail (works as a fallback in complex editors)
   function rectFromPoint(x, y) {
     try {
-      // Try caretRangeFromPoint (WebKit/Blink)
-      if (document.caretRangeFromPoint) {
-        const range = document.caretRangeFromPoint(x, y);
-        if (range) {
-          const rects = range.getClientRects();
-          if (rects && rects.length) return rects[0];
-        }
-      }
-      // Try caretPositionFromPoint (Firefox)
+      // 1) Preferred: use caretPositionFromPoint (standard alternative). If unavailable,
+      // fall back to the robust text-node probing logic below.
       if (document.caretPositionFromPoint) {
         const pos = document.caretPositionFromPoint(x, y);
         if (pos && pos.offsetNode) {
@@ -167,12 +150,46 @@
           if (rects && rects.length) return rects[0];
         }
       }
-      // Fallback: elementFromPoint and use its bounding box
+
+      // 2) Robust fallback: find a nearby text node under the point and probe small ranges
       const el = document.elementFromPoint(x, y);
-      if (el) {
-        // return a small rect centered at the point (viewport coordinates)
-        return { left: x - 8, right: x + 8, top: y - 8, bottom: y + 8, width: 16, height: 16 };
+      if (!el) return null;
+      // Search text nodes inside the element using a TreeWalker
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+      let node = walker.currentNode;
+      // If currentNode is el itself, advance
+      node = walker.nextNode();
+      while (node) {
+        const txt = node.nodeValue;
+        if (txt && txt.trim()) {
+          const len = txt.length;
+          // sample positions across the text node (avoid probing every char)
+          const step = Math.max(1, Math.floor(len / 8));
+          for (let i = 0; i < len; i += step) {
+            try {
+              const r = document.createRange();
+              const start = i;
+              const end = Math.min(len, i + 1);
+              r.setStart(node, start);
+              r.setEnd(node, end);
+              const rects = r.getClientRects();
+              if (rects && rects.length) {
+                for (const rc of rects) {
+                  if (x >= rc.left && x <= rc.right && y >= rc.top && y <= rc.bottom) {
+                    return rc;
+                  }
+                }
+              }
+            } catch (e) {
+              // ignore bad ranges
+            }
+          }
+        }
+        node = walker.nextNode();
       }
+
+      // 3) last-resort: return a small rect centered at the point
+      return { left: x - 8, right: x + 8, top: y - 8, bottom: y + 8, width: 16, height: 16 };
     } catch (e) {}
     return null;
   }
